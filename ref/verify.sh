@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # verify.sh — deterministic equivalent of SEED.md ## Verify prompts.
-# Run from $REPO_ROOT. Exit 0 = all three prompts pass.
+# Run from $REPO_ROOT. Exit 0 = all checks pass.
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
