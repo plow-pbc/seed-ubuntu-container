@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=10
+TOTAL=11
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
@@ -141,6 +141,25 @@ echo "  ok"
 echo "[10/$TOTAL] preflight aborts on other unsupported host..."
 ! echo y | UNAME_S=FreeBSD UNAME_M=amd64 bash ref/preflight.sh >/dev/null 2>&1 \
   || fail "preflight should have aborted on FreeBSD/amd64"
+echo "  ok"
+
+# 11. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
+#     "absent" — that's the bug we fixed by switching to a list-and-filter
+#     query. Pin it by faking docker as a binary that always exits non-zero;
+#     sandbox.sh down must propagate.
+echo "[11/$TOTAL] cmd_down propagates daemon errors..."
+FAKE_BIN="$(mktemp -d)"
+trap 'rm -rf "$FAKE_BIN"' EXIT
+cat > "$FAKE_BIN/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "fake docker: simulated daemon error" >&2
+exit 1
+FAKE
+chmod +x "$FAKE_BIN/docker"
+! PATH="$FAKE_BIN:$PATH" bash ref/sandbox.sh down "verify-fake-$$-$RANDOM" >/dev/null 2>&1 \
+  || fail "sandbox.sh down should have propagated fake-docker failure (regressed back to inspect-and-swallow?)"
+rm -rf "$FAKE_BIN"
+trap - EXIT
 echo "  ok"
 
 echo "All checks passed."
