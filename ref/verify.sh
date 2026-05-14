@@ -161,14 +161,26 @@ trap - EXIT
 echo "  ok"
 
 # 12. --mount host path validation. A missing host path MUST abort with a
-#     clear message, not silently auto-create a root-owned dir on the host.
-echo "[12/$TOTAL] --mount rejects missing/relative host paths..."
+#     clear message, not silently auto-create a root-owned dir. A relative
+#     host path MUST abort separately even if it exists, because docker -v
+#     would treat 'name:/x' as a named volume, not a bind mount.
+echo "[12/$TOTAL] --mount rejects missing and relative host paths..."
+
 MISSING="/tmp/verify-absent-$$-$RANDOM"
 [ -e "$MISSING" ] && fail "test setup bug: $MISSING shouldn't exist"
 ! bash ref/sandbox.sh up "verify-mnt-miss-$$-$RANDOM" --mount "$MISSING:/x" >/dev/null 2>&1 \
   || fail "--mount with missing host path should have errored"
-! bash ref/sandbox.sh up "verify-mnt-rel-$$-$RANDOM" --mount "relative:/x" >/dev/null 2>&1 \
-  || fail "--mount with relative host path should have errored"
+
+# Create a real relative directory so the existence guard passes; the
+# absolute-path guard is then what MUST reject this. Without an existing
+# relative dir, this prompt would only exercise the existence guard.
+REL_DIR="verify-rel-$$-$RANDOM"
+mkdir "$REL_DIR"
+trap 'rmdir "$REL_DIR" 2>/dev/null || true' EXIT
+! bash ref/sandbox.sh up "verify-mnt-rel-$$-$RANDOM" --mount "$REL_DIR:/x" >/dev/null 2>&1 \
+  || fail "--mount with existing relative host path should have errored (absolute guard didn't fire)"
+rmdir "$REL_DIR"
+trap - EXIT
 echo "  ok"
 
 # 13. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
