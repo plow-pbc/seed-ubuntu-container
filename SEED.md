@@ -121,3 +121,4 @@ A deterministic implementation lives at [`ref/verify.sh`](ref/verify.sh).
 - Not a registry. Image lives locally.
 - Not an orchestrator. One sandbox per name; no compose/swarm/pod abstractions.
 - Not a Claude Code skill. A `/seed-create` skill would be a downstream consumer that calls `sandbox.sh`.
+- Not a security boundary. The sandbox `seed` user has passwordless sudo; `--mount` exposes host paths as writable; preflight's docker-group add is host-root-equivalent (docker's own threat model). For running untrusted code, reach for a VM (Lima, Firecracker), not this SEED.
