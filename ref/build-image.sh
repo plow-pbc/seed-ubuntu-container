@@ -16,25 +16,11 @@ esac
 IMAGE_SHA="$(sha256sum ref/Dockerfile | awk '{print $1}')"
 IMAGE_TAG="seed-ubuntu:${IMAGE_SHA}"
 
-# Skip if already built.
-case "$RUNTIME" in
-  docker)
-    if docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
-      echo "$IMAGE_TAG already present; nothing to do."
-      exit 0
-    fi
-    ;;
-  container)
-    if container image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
-      echo "$IMAGE_TAG already present; nothing to do."
-      exit 0
-    fi
-    ;;
-esac
+if "$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+  echo "$IMAGE_TAG already present; nothing to do."
+  exit 0
+fi
 
 echo "Building $IMAGE_TAG..."
-case "$RUNTIME" in
-  docker)    docker    build --tag "$IMAGE_TAG" ref/ ;;
-  container) container build --tag "$IMAGE_TAG" ref/ ;;
-esac
+"$RUNTIME" build --tag "$IMAGE_TAG" ref/
 echo "Built $IMAGE_TAG."
