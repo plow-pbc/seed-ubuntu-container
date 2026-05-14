@@ -9,18 +9,10 @@ cd "$REPO_ROOT"
 # shellcheck source=lib.sh
 . "$REPO_ROOT/ref/lib.sh"
 
-# Detect runtime (matches sandbox.sh logic).
-case "$(uname -s)" in
-  Linux)  RUNTIME="docker" ;;
-  Darwin) RUNTIME="container" ;;
-  *) echo "FAIL: unsupported host: $(uname -s)" >&2; exit 1 ;;
-esac
+RUNTIME="$(detect_runtime)" || exit 1
+IMAGE_TAG="$(image_tag)"
 
 TOTAL=5
-
-# Image tag = sha256 of Dockerfile content.
-IMAGE_SHA="$(sha256_file ref/Dockerfile)"
-IMAGE_TAG="seed-ubuntu:${IMAGE_SHA}"
 
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
@@ -38,16 +30,8 @@ echo "  ok"
 
 # 2. Base image is present.
 echo "[2/$TOTAL] Base image $IMAGE_TAG is present..."
-case "$RUNTIME" in
-  docker)
-    docker image inspect "$IMAGE_TAG" >/dev/null 2>&1 \
-      || { echo "FAIL: image $IMAGE_TAG not found; run ref/build-image.sh" >&2; exit 1; }
-    ;;
-  container)
-    container image inspect "$IMAGE_TAG" >/dev/null 2>&1 \
-      || { echo "FAIL: image $IMAGE_TAG not found; run ref/build-image.sh" >&2; exit 1; }
-    ;;
-esac
+"$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1 \
+  || { echo "FAIL: image $IMAGE_TAG not found; run ref/build-image.sh" >&2; exit 1; }
 echo "  ok"
 
 # 3. End-to-end round-trip. Spin up, exec echo hello, down, confirm no residue.

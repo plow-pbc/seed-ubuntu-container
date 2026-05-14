@@ -13,15 +13,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$REPO_ROOT/ref/lib.sh"
 NAME_PREFIX="seed-ubuntu"
 
-case "$(uname -s)" in
-  Linux)  RUNTIME="docker" ;;
-  Darwin) RUNTIME="container" ;;
-  *) echo "unsupported host: $(uname -s)" >&2; exit 1 ;;
-esac
-
-image_tag() {
-  echo "seed-ubuntu:$(sha256_file "$REPO_ROOT/ref/Dockerfile")"
-}
+RUNTIME="$(detect_runtime)" || exit 1
 
 full_name() {
   echo "${NAME_PREFIX}-$1"

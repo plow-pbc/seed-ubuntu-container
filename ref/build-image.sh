@@ -9,14 +9,8 @@ cd "$REPO_ROOT"
 # shellcheck source=lib.sh
 . "$REPO_ROOT/ref/lib.sh"
 
-case "$(uname -s)" in
-  Linux)  RUNTIME="docker" ;;
-  Darwin) RUNTIME="container" ;;
-  *) echo "unsupported host: $(uname -s)" >&2; exit 1 ;;
-esac
-
-IMAGE_SHA="$(sha256_file ref/Dockerfile)"
-IMAGE_TAG="seed-ubuntu:${IMAGE_SHA}"
+RUNTIME="$(detect_runtime)" || exit 1
+IMAGE_TAG="$(image_tag)"
 
 if "$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
   echo "$IMAGE_TAG already present; nothing to do."
