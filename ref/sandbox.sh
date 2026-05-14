@@ -22,12 +22,17 @@ cmd_up() {
     case "$1" in
       --recreate) recreate=1; shift ;;
       --mount)
-        # Fail loud on two real footguns:
-        #  - docker -v silently creates absent host paths (owned by root)
-        #  - relative paths in -v are treated as named volumes, not bind mounts
+        # Fail loud on the footguns of bare `docker -v`:
+        #  - 'path' (no colon) creates an anonymous volume, not a bind mount
+        #  - relative host paths are treated as named volumes, not bind mounts
+        #  - absent host paths are silently auto-created (owned by root)
+        #  - non-absolute container paths are silently rejected by docker
+        case "$2" in *:*) ;; *) echo "sandbox.sh up: --mount must be HOST:CONTAINER, got: $2" >&2; exit 2 ;; esac
         local host="${2%%:*}"
+        local container_path="${2#*:}"
         [ "${host:0:1}" = "/" ] || { echo "sandbox.sh up: --mount host path must be absolute: $host" >&2; exit 2; }
         [ -e "$host" ] || { echo "sandbox.sh up: --mount host path missing: $host" >&2; exit 2; }
+        [ "${container_path:0:1}" = "/" ] || { echo "sandbox.sh up: --mount container path must be absolute: $container_path" >&2; exit 2; }
         mount_args+=(-v "$2"); shift 2 ;;
       *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac

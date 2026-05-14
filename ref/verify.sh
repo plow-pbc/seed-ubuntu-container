@@ -18,8 +18,13 @@ TOTAL=13
 # probe at the end is docker-only — extra prompt on docker hosts.
 [ "$RUNTIME" = "docker" ] && TOTAL=14
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
-cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
+SANDBOX=ref/sandbox.sh
+fail()    { echo "FAIL: $*" >&2; exit 1; }
+sb_up()   { bash "$SANDBOX" up   "$@"; }
+sb_exec() { bash "$SANDBOX" exec "$@"; }
+sb_down() { bash "$SANDBOX" down "$@"; }
+sb_list() { bash "$SANDBOX" list      ; }
+cleanup_sandbox() { sb_down "$1" >/dev/null 2>&1 || true; }
 
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
@@ -43,19 +48,19 @@ trap 'cleanup_sandbox "$SANDBOX_NAME"' EXIT
 
 echo "[3/$TOTAL] End-to-end round-trip ($SANDBOX_NAME)..."
 
-bash ref/sandbox.sh up "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh up failed"
+sb_up "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh up failed"
 
 # Positive list assertion: running sandbox MUST appear in list output.
-bash ref/sandbox.sh list | grep -Fxq "$FULL_NAME" \
+sb_list | grep -Fxq "$FULL_NAME" \
   || fail "list did not include running sandbox $FULL_NAME"
 
-OUT="$(bash ref/sandbox.sh exec "$SANDBOX_NAME" -- echo hello)"
+OUT="$(sb_exec "$SANDBOX_NAME" -- echo hello)"
 [ "$OUT" = "hello" ] || fail "expected 'hello', got '$OUT'"
 
-bash ref/sandbox.sh down "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh down failed"
+sb_down "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh down failed"
 
 # Confirm no residue.
-! bash ref/sandbox.sh list | grep -q "$FULL_NAME" \
+! sb_list | grep -q "$FULL_NAME" \
   || fail "sandbox $FULL_NAME still present after down"
 
 trap - EXIT
@@ -67,10 +72,10 @@ echo "  ok"
 NEG_NAME="verify-neg-$$-$RANDOM"
 trap 'cleanup_sandbox "$NEG_NAME"' EXIT
 echo "[4/$TOTAL] exec proxies non-zero exit ($NEG_NAME)..."
-bash ref/sandbox.sh up "$NEG_NAME" >/dev/null
-! bash ref/sandbox.sh exec "$NEG_NAME" -- false \
+sb_up "$NEG_NAME" >/dev/null
+! sb_exec "$NEG_NAME" -- false \
   || fail "'sandbox.sh exec ... -- false' returned 0; exit code not proxied"
-bash ref/sandbox.sh down "$NEG_NAME" >/dev/null
+sb_down "$NEG_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
@@ -88,11 +93,11 @@ EXP_A="$(cat "$MNT_A/probe")"
 EXP_B="$(cat "$MNT_B/probe")"
 trap 'cleanup_sandbox "$MNT_NAME"; rm -rf "$MNT_A" "$MNT_B"' EXIT
 echo "[5/$TOTAL] --mount round-trip with two mounts ($MNT_NAME)..."
-bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
+sb_up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
 
 # Read: both mounts visible from inside.
-GOT_A="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /a/probe)"
-GOT_B="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /b/probe)"
+GOT_A="$(sb_exec "$MNT_NAME" -- cat /a/probe)"
+GOT_B="$(sb_exec "$MNT_NAME" -- cat /b/probe)"
 [ "$GOT_A" = "$EXP_A" ] || fail "--mount A: expected '$EXP_A', got '$GOT_A'"
 [ "$GOT_B" = "$EXP_B" ] || fail "--mount B (later mount lost?): expected '$EXP_B', got '$GOT_B'"
 
@@ -100,12 +105,12 @@ GOT_B="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /b/probe)"
 # README's "writable mount" promise — the sandbox user (uid 1000, matching
 # typical Linux devs) can write through bind-mounts without sudo.
 WROTE="wrote-from-sandbox-$RANDOM"
-bash ref/sandbox.sh exec "$MNT_NAME" -- bash -c "echo $WROTE > /a/written"
+sb_exec "$MNT_NAME" -- bash -c "echo $WROTE > /a/written"
 [ -f "$MNT_A/written" ] || fail "--mount A: write from sandbox did not reach host (no file)"
 [ "$(cat "$MNT_A/written")" = "$WROTE" ] \
   || fail "--mount A: write from sandbox reached host but content mismatched"
 
-bash ref/sandbox.sh down "$MNT_NAME" >/dev/null
+sb_down "$MNT_NAME" >/dev/null
 rm -rf "$MNT_A" "$MNT_B"
 trap - EXIT
 echo "  ok"
@@ -114,24 +119,24 @@ echo "  ok"
 COL_NAME="verify-col-$$-$RANDOM"
 trap 'cleanup_sandbox "$COL_NAME"' EXIT
 echo "[6/$TOTAL] up rejects duplicate name without --recreate..."
-bash ref/sandbox.sh up "$COL_NAME" >/dev/null
-! bash ref/sandbox.sh up "$COL_NAME" >/dev/null 2>&1 \
+sb_up "$COL_NAME" >/dev/null
+! sb_up "$COL_NAME" >/dev/null 2>&1 \
   || fail "second 'up' without --recreate should have errored"
 echo "  ok"
 
 # 7. --recreate: replaces an existing sandbox in place. The current container
 #    keeps the same name and is usable for exec.
 echo "[7/$TOTAL] --recreate replaces existing sandbox..."
-bash ref/sandbox.sh up "$COL_NAME" --recreate >/dev/null
-OUT="$(bash ref/sandbox.sh exec "$COL_NAME" -- echo recreated)"
+sb_up "$COL_NAME" --recreate >/dev/null
+OUT="$(sb_exec "$COL_NAME" -- echo recreated)"
 [ "$OUT" = "recreated" ] || fail "--recreate sandbox not usable; got '$OUT'"
-bash ref/sandbox.sh down "$COL_NAME" >/dev/null
+sb_down "$COL_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
 # 8. Idempotent down: `down` on a never-created name MUST exit 0.
 echo "[8/$TOTAL] down on absent sandbox exits 0..."
-bash ref/sandbox.sh down "verify-absent-$$-$RANDOM" >/dev/null \
+sb_down "verify-absent-$$-$RANDOM" >/dev/null \
   || fail "down on never-created sandbox should be a no-op"
 echo "  ok"
 
@@ -155,12 +160,12 @@ echo "  ok"
 ID_NAME="verify-id-$$-$RANDOM"
 trap 'cleanup_sandbox "$ID_NAME"' EXIT
 echo "[11/$TOTAL] container user is uid 1000 with passwordless sudo..."
-bash ref/sandbox.sh up "$ID_NAME" >/dev/null
-USER_UID="$(bash ref/sandbox.sh exec "$ID_NAME" -- id -u)"
+sb_up "$ID_NAME" >/dev/null
+USER_UID="$(sb_exec "$ID_NAME" -- id -u)"
 [ "$USER_UID" = "1000" ] || fail "container user uid expected 1000, got '$USER_UID'"
-bash ref/sandbox.sh exec "$ID_NAME" -- sudo -n true \
+sb_exec "$ID_NAME" -- sudo -n true \
   || fail "container user lacks passwordless sudo"
-bash ref/sandbox.sh down "$ID_NAME" >/dev/null
+sb_down "$ID_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
@@ -172,7 +177,7 @@ echo "[12/$TOTAL] --mount rejects missing and relative host paths..."
 
 MISSING="/tmp/verify-absent-$$-$RANDOM"
 [ -e "$MISSING" ] && fail "test setup bug: $MISSING shouldn't exist"
-! bash ref/sandbox.sh up "verify-mnt-miss-$$-$RANDOM" --mount "$MISSING:/x" >/dev/null 2>&1 \
+! sb_up "verify-mnt-miss-$$-$RANDOM" --mount "$MISSING:/x" >/dev/null 2>&1 \
   || fail "--mount with missing host path should have errored"
 
 # Create a real relative directory so the existence guard passes; the
@@ -181,10 +186,16 @@ MISSING="/tmp/verify-absent-$$-$RANDOM"
 REL_DIR="verify-rel-$$-$RANDOM"
 mkdir "$REL_DIR"
 trap 'rmdir "$REL_DIR" 2>/dev/null || true' EXIT
-! bash ref/sandbox.sh up "verify-mnt-rel-$$-$RANDOM" --mount "$REL_DIR:/x" >/dev/null 2>&1 \
+! sb_up "verify-mnt-rel-$$-$RANDOM" --mount "$REL_DIR:/x" >/dev/null 2>&1 \
   || fail "--mount with existing relative host path should have errored (absolute guard didn't fire)"
 rmdir "$REL_DIR"
 trap - EXIT
+
+# Colonless --mount must error too — docker -v with a single absolute path
+# creates an anonymous volume, not a bind mount, so writes don't reach the
+# host caller expected.
+! sb_up "verify-mnt-nocolon-$$-$RANDOM" --mount "/tmp" >/dev/null 2>&1 \
+  || fail "--mount without colon (HOST only) should have errored"
 echo "  ok"
 
 # 13. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
@@ -200,7 +211,7 @@ echo "fake docker: simulated daemon error" >&2
 exit 1
 FAKE
 chmod +x "$FAKE_BIN/docker"
-! PATH="$FAKE_BIN:$PATH" bash ref/sandbox.sh down "verify-fake-$$-$RANDOM" >/dev/null 2>&1 \
+! PATH="$FAKE_BIN:$PATH" sb_down "verify-fake-$$-$RANDOM" >/dev/null 2>&1 \
   || fail "sandbox.sh down should have propagated fake-docker failure (regressed back to inspect-and-swallow?)"
 rm -rf "$FAKE_BIN"
 trap - EXIT
@@ -218,9 +229,9 @@ if [ "$RUNTIME" = "docker" ]; then
   FULL_VOL="$(full_name "$VOL_NAME")"
   docker volume create "$FULL_VOL" >/dev/null
   trap 'cleanup_sandbox "$VOL_NAME"; docker volume rm -f "$FULL_VOL" >/dev/null 2>&1 || true' EXIT
-  bash ref/sandbox.sh up "$VOL_NAME" >/dev/null \
+  sb_up "$VOL_NAME" >/dev/null \
     || fail "sandbox.sh up errored on volume-name collision (regressed to broad inspect?)"
-  bash ref/sandbox.sh down "$VOL_NAME" >/dev/null
+  sb_down "$VOL_NAME" >/dev/null
   docker volume rm -f "$FULL_VOL" >/dev/null
   trap - EXIT
   echo "  ok"
