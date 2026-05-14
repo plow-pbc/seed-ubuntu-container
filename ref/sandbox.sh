@@ -22,9 +22,11 @@ cmd_up() {
     case "$1" in
       --recreate) recreate=1; shift ;;
       --mount)
-        # Fail loud on typos. Docker -v silently creates absent host paths
-        # (owned by root), which is a footgun.
+        # Fail loud on two real footguns:
+        #  - docker -v silently creates absent host paths (owned by root)
+        #  - relative paths in -v are treated as named volumes, not bind mounts
         local host="${2%%:*}"
+        [ "${host:0:1}" = "/" ] || { echo "sandbox.sh up: --mount host path must be absolute: $host" >&2; exit 2; }
         [ -e "$host" ] || { echo "sandbox.sh up: --mount host path missing: $host" >&2; exit 2; }
         mount_args+=(-v "$2"); shift 2 ;;
       *) echo "unknown flag: $1" >&2; exit 2 ;;
@@ -37,9 +39,18 @@ cmd_up() {
   # Build if missing (idempotent).
   bash "$REPO_ROOT/ref/build-image.sh" >/dev/null
 
-  # Handle name collision. Use `if` to avoid set -e tripping on the
-  # non-zero `inspect` exit when the container is absent.
-  if "$RUNTIME" inspect "$fn" >/dev/null 2>&1; then
+  # Handle name collision. Scope the existence check to containers only —
+  # `docker inspect` matches any docker object (containers, images, volumes,
+  # networks), so an unrelated object named `seed-ubuntu-<name>` would block
+  # `up`. Use the explicit container-only subcommand on Linux.
+  local container_exists=0
+  case "$RUNTIME" in
+    docker)
+      if docker container inspect "$fn" >/dev/null 2>&1; then container_exists=1; fi ;;
+    container)
+      if container inspect "$fn" >/dev/null 2>&1; then container_exists=1; fi ;;
+  esac
+  if [ "$container_exists" = 1 ]; then
     if [ "$recreate" = 1 ]; then
       cmd_down "$name"
     else

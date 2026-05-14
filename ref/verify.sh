@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=12
+TOTAL=13
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
@@ -160,11 +160,22 @@ bash ref/sandbox.sh down "$ID_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
-# 12. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
+# 12. --mount host path validation. A missing host path MUST abort with a
+#     clear message, not silently auto-create a root-owned dir on the host.
+echo "[12/$TOTAL] --mount rejects missing/relative host paths..."
+MISSING="/tmp/verify-absent-$$-$RANDOM"
+[ -e "$MISSING" ] && fail "test setup bug: $MISSING shouldn't exist"
+! bash ref/sandbox.sh up "verify-mnt-miss-$$-$RANDOM" --mount "$MISSING:/x" >/dev/null 2>&1 \
+  || fail "--mount with missing host path should have errored"
+! bash ref/sandbox.sh up "verify-mnt-rel-$$-$RANDOM" --mount "relative:/x" >/dev/null 2>&1 \
+  || fail "--mount with relative host path should have errored"
+echo "  ok"
+
+# 13. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
 #     "absent" — that's the bug we fixed by switching to a list-and-filter
 #     query. Pin it by faking docker as a binary that always exits non-zero;
 #     sandbox.sh down must propagate.
-echo "[12/$TOTAL] cmd_down propagates daemon errors..."
+echo "[13/$TOTAL] cmd_down propagates daemon errors..."
 FAKE_BIN="$(mktemp -d)"
 trap 'rm -rf "$FAKE_BIN"' EXIT
 cat > "$FAKE_BIN/docker" <<'FAKE'
