@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=11
+TOTAL=12
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
@@ -143,11 +143,28 @@ echo "[10/$TOTAL] preflight aborts on other unsupported host..."
   || fail "preflight should have aborted on FreeBSD/amd64"
 echo "  ok"
 
-# 11. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
+# 11. Container identity. Pins both ends of the writable-mount contract:
+#     the sandbox user MUST be uid 1000 (so it matches a typical Linux dev
+#     host) AND MUST have passwordless sudo (so consumer SEED installs that
+#     need root can run unattended). The chmod 0777 in prompt 5 is for
+#     test portability; this prompt pins the actual contract.
+ID_NAME="verify-id-$$-$RANDOM"
+trap 'cleanup_sandbox "$ID_NAME"' EXIT
+echo "[11/$TOTAL] container user is uid 1000 with passwordless sudo..."
+bash ref/sandbox.sh up "$ID_NAME" >/dev/null
+USER_UID="$(bash ref/sandbox.sh exec "$ID_NAME" -- id -u)"
+[ "$USER_UID" = "1000" ] || fail "container user uid expected 1000, got '$USER_UID'"
+bash ref/sandbox.sh exec "$ID_NAME" -- sudo -n true \
+  || fail "container user lacks passwordless sudo"
+bash ref/sandbox.sh down "$ID_NAME" >/dev/null
+trap - EXIT
+echo "  ok"
+
+# 12. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
 #     "absent" — that's the bug we fixed by switching to a list-and-filter
 #     query. Pin it by faking docker as a binary that always exits non-zero;
 #     sandbox.sh down must propagate.
-echo "[11/$TOTAL] cmd_down propagates daemon errors..."
+echo "[12/$TOTAL] cmd_down propagates daemon errors..."
 FAKE_BIN="$(mktemp -d)"
 trap 'rm -rf "$FAKE_BIN"' EXIT
 cat > "$FAKE_BIN/docker" <<'FAKE'
