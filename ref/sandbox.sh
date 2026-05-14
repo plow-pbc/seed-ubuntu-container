@@ -11,22 +11,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib.sh
 . "$REPO_ROOT/ref/lib.sh"
-NAME_PREFIX="seed-ubuntu"
 
 RUNTIME="$(detect_runtime)" || exit 1
-
-full_name() {
-  echo "${NAME_PREFIX}-$1"
-}
 
 cmd_up() {
   local name="$1"; shift
   local recreate=0
-  local mount=""
+  local mount_args=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --recreate) recreate=1; shift ;;
-      --mount)    mount="$2"; shift 2 ;;
+      --mount)    mount_args+=(-v "$2"); shift 2 ;;
       *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac
   done
@@ -39,22 +34,13 @@ cmd_up() {
 
   # Handle name collision. Use `if` to avoid set -e tripping on the
   # non-zero `inspect` exit when the container is absent.
-  local exists=0
   if "$RUNTIME" inspect "$fn" >/dev/null 2>&1; then
-    exists=1
-  fi
-  if [ "$exists" = 1 ]; then
     if [ "$recreate" = 1 ]; then
       cmd_down "$name"
     else
       echo "sandbox $fn already exists (use --recreate to replace)" >&2
       exit 1
     fi
-  fi
-
-  local mount_args=()
-  if [ -n "$mount" ]; then
-    mount_args=(-v "$mount")
   fi
 
   "$RUNTIME" run -d --name "$fn" "${mount_args[@]}" "$tag" >/dev/null

@@ -6,6 +6,10 @@ set -euo pipefail
 # Exits non-zero with a clear message if anything is wrong or if re-login
 # is required after group changes.
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib.sh
+. "$REPO_ROOT/ref/lib.sh"
+
 UNAME_S="${UNAME_S:-$(uname -s)}"
 UNAME_M="${UNAME_M:-$(uname -m)}"
 
@@ -14,35 +18,19 @@ abort() {
   exit 1
 }
 
-# 1. Host detection (no fallbacks).
-case "$UNAME_S/$UNAME_M" in
-  Linux/x86_64|Linux/aarch64) ;;
-  Darwin/arm64) ;;
-  Darwin/x86_64)
-    abort "Intel Mac not supported. seed-ubuntu-container requires Apple Silicon." ;;
-  *)
-    abort "unsupported host: $UNAME_S/$UNAME_M" ;;
-esac
+# 1. Host detection — single source of truth in lib.sh's detect_runtime.
+runtime="$(detect_runtime)" || exit 1
 
-# 2. Detect runtime state.
+# 2. Detect runtime state (whether it's installed; group membership).
 install_runtime=0
 install_group=0
-runtime=""
 case "$UNAME_S" in
   Linux)
-    runtime="docker"
-    if ! command -v docker >/dev/null 2>&1; then
-      install_runtime=1
-    fi
-    if ! id -nG | grep -qw docker; then
-      install_group=1
-    fi
+    if ! command -v docker >/dev/null 2>&1; then install_runtime=1; fi
+    if ! id -nG | grep -qw docker; then install_group=1; fi
     ;;
   Darwin)
-    runtime="container"
-    if ! command -v container >/dev/null 2>&1; then
-      install_runtime=1
-    fi
+    if ! command -v container >/dev/null 2>&1; then install_runtime=1; fi
     ;;
 esac
 

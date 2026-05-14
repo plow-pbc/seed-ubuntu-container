@@ -32,7 +32,7 @@ echo "  ok"
 
 # 3. End-to-end round-trip. Spin up, exec echo hello, down, confirm no residue.
 SANDBOX_NAME="verify-$$-$RANDOM"
-FULL_NAME="seed-ubuntu-${SANDBOX_NAME}"
+FULL_NAME="$(full_name "$SANDBOX_NAME")"
 
 cleanup() {
   bash ref/sandbox.sh down "$SANDBOX_NAME" >/dev/null 2>&1 || true
