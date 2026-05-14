@@ -76,7 +76,10 @@ cmd_exec() {
 cmd_down() {
   local name="$1"
   local fn; fn="$(full_name "$name")"
-  "$RUNTIME" rm -f "$fn" >/dev/null 2>&1 || true
+  # Idempotent only for the absent case. Real runtime errors propagate.
+  if "$RUNTIME" inspect "$fn" >/dev/null 2>&1; then
+    "$RUNTIME" rm -f "$fn" >/dev/null
+  fi
 }
 
 cmd_list() {
