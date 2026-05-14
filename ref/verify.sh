@@ -12,13 +12,13 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=13
+TOTAL=14
 # Apple `container` doesn't have a docker-style cross-object name namespace
 # (image/volume/network/container all share names), so the volume-collision
 # probe at the end is docker-only — extra prompt on docker hosts. The
-# daemon-error propagation probe in [14] is also docker-only because it
+# daemon-error propagation probe in [15] is also docker-only because it
 # shadows the `docker` binary in PATH to simulate failure.
-[ "$RUNTIME" = "docker" ] && TOTAL=15
+[ "$RUNTIME" = "docker" ] && TOTAL=16
 
 SANDBOX=ref/sandbox.sh
 fail()    { echo "FAIL: $*" >&2; exit 1; }
@@ -232,24 +232,59 @@ chmod +x "$PFB_DIR/brew"
 # a real `container` binary on the host (e.g. /opt/homebrew/bin/container)
 # would shadow the to-be-installed fake, preflight would skip the install
 # branch, and the regression check would silently pass.
-echo y | FAKE_LOG="$PFB_LOG" UNAME_S=Darwin UNAME_M=arm64 \
-  PATH="$PFB_DIR:/usr/bin:/bin" bash ref/preflight.sh >/dev/null \
+PFB_OUT="$(echo y | FAKE_LOG="$PFB_LOG" UNAME_S=Darwin UNAME_M=arm64 \
+  PATH="$PFB_DIR:/usr/bin:/bin" bash ref/preflight.sh)" \
   || fail "preflight should succeed on Darwin/arm64 with brew on PATH"
 grep -Fxq "brew install container" "$PFB_LOG" \
   || fail "preflight must call 'brew install container' (formula, not --cask)"
 grep -Fxq "container system start --enable-kernel-install" "$PFB_LOG" \
   || fail "preflight must pass --enable-kernel-install (non-interactive kata kernel)"
+# Plan-print is part of the user-facing install contract (SEED.md says
+# "display and confirm the following shell block before execution"). Pin
+# that the printed plan matches what actually executes, so the two can't
+# drift silently.
+printf '%s\n' "$PFB_OUT" | grep -Fq "brew install container" \
+  || fail "preflight plan must print 'brew install container'"
+printf '%s\n' "$PFB_OUT" | grep -Fq "container system start --enable-kernel-install" \
+  || fail "preflight plan must print 'container system start --enable-kernel-install'"
 rm -rf "$PFB_DIR"
 trap - EXIT
 echo "  ok"
 
-# 14. (Docker only) cmd_down propagates real runtime errors. `inspect` failing
+# 14. sandbox.sh list (Darwin) uses the Apple `container list --all --quiet`
+#     grammar. Apple's CLI rejects Docker-style `--format '{{.Names}}'`, so a
+#     regression here would silently fail on macOS but pass on Linux/Docker
+#     CI. PATH-shadows a fake `container` that ONLY accepts `list --all
+#     --quiet` (with exactly 3 args) — any drift in argv shape errors loud.
+#     Reuses test 9's UNAME_S override and test 13's PATH-shadow seam.
+echo "[14/$TOTAL] sandbox.sh list (Darwin) uses 'container list --all --quiet'..."
+CLG_DIR="$(mktemp -d)"
+trap 'rm -rf "$CLG_DIR"' EXIT
+cat > "$CLG_DIR/container" <<'FAKE'
+#!/usr/bin/env bash
+if [ "$1" = "list" ] && [ "$2" = "--all" ] && [ "$3" = "--quiet" ] && [ $# = 3 ]; then
+  printf '%s\n' "seed-ubuntu-listprobe" "not-a-seed-prefix"
+  exit 0
+fi
+echo "fake container: unexpected argv '$*'" >&2
+exit 2
+FAKE
+chmod +x "$CLG_DIR/container"
+got="$(UNAME_S=Darwin UNAME_M=arm64 PATH="$CLG_DIR:/usr/bin:/bin" bash ref/sandbox.sh list)" \
+  || fail "sandbox.sh list must call 'container list --all --quiet' (no --format template)"
+[ "$got" = "seed-ubuntu-listprobe" ] \
+  || fail "sandbox.sh list NAME_PREFIX filter broken — got '$got', expected 'seed-ubuntu-listprobe'"
+rm -rf "$CLG_DIR"
+trap - EXIT
+echo "  ok"
+
+# 15. (Docker only) cmd_down propagates real runtime errors. `inspect` failing
 #     doesn't mean "absent" — that's the bug we fixed by switching to a
 #     list-and-filter query. Pin it by faking docker as a binary that always
 #     exits non-zero; sandbox.sh down must propagate. Apple `container` doesn't
 #     share the docker binary name, so the PATH shadow can't bite on macOS.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[14/$TOTAL] cmd_down propagates daemon errors..."
+  echo "[15/$TOTAL] cmd_down propagates daemon errors..."
   FAKE_BIN="$(mktemp -d)"
   trap 'rm -rf "$FAKE_BIN"' EXIT
   cat > "$FAKE_BIN/docker" <<'FAKE'
@@ -265,14 +300,14 @@ FAKE
   echo "  ok"
 fi
 
-# 15. (Docker only) cmd_up's collision check must NOT match non-container
+# 16. (Docker only) cmd_up's collision check must NOT match non-container
 #     docker objects. Round-10 narrowed from `docker inspect` (matches
 #     containers/images/volumes/networks) via `cmd_list` (containers only).
 #     If someone reverts to broad inspect, a same-named docker volume
 #     would falsely block `sandbox.sh up`. Apple `container` doesn't share
 #     this namespace so the probe is docker-only.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[15/$TOTAL] cmd_up ignores non-container docker objects..."
+  echo "[16/$TOTAL] cmd_up ignores non-container docker objects..."
   VOL_NAME="verify-vol-$$-$RANDOM"
   FULL_VOL="$(full_name "$VOL_NAME")"
   docker volume create "$FULL_VOL" >/dev/null
