@@ -58,10 +58,6 @@ Idempotent. Builds `seed-ubuntu:<sha256-of-Dockerfile>` if missing. No sudo, no 
 ### `sandbox.sh` command surface
 
 - `ref/sandbox.sh` exposes four subcommands: `up`, `exec`, `down`, `list`. ^obj-sandbox-sh
-
-### `$SEED_UBUNTU_NAME`
-
-- The suggested env-var convention for consumers when they pick a sandbox name. ^obj-name-var
 - Sandbox containers are named `seed-ubuntu-<name>` on the host so `list` can filter cleanly.
 
 ### `ref/`
