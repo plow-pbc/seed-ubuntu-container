@@ -12,14 +12,6 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=14
-# Apple `container` doesn't have a docker-style cross-object name namespace
-# (image/volume/network/container all share names), so the volume-collision
-# probe at the end is docker-only — extra prompt on docker hosts. The
-# daemon-error propagation probe in [15] is also docker-only because it
-# shadows the `docker` binary in PATH to simulate failure.
-[ "$RUNTIME" = "docker" ] && TOTAL=16
-
 SANDBOX=ref/sandbox.sh
 fail()    { echo "FAIL: $*" >&2; exit 1; }
 sb_up()   { bash "$SANDBOX" up   "$@"; }
@@ -29,7 +21,7 @@ sb_list() { bash "$SANDBOX" list      ; }
 cleanup_sandbox() { sb_down "$1" >/dev/null 2>&1 || true; }
 
 # 1. Runtime is healthy.
-echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
+echo "Runtime is healthy ($RUNTIME)..."
 case "$RUNTIME" in
   docker)    docker version --format '{{.Server.Version}}' >/dev/null || fail "docker not responsive" ;;
   container) container --version >/dev/null || fail "apple container CLI not responsive" ;;
@@ -37,7 +29,7 @@ esac
 echo "  ok"
 
 # 2. Base image is present.
-echo "[2/$TOTAL] Base image $IMAGE_TAG is present..."
+echo "Base image $IMAGE_TAG is present..."
 "$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1 \
   || fail "image $IMAGE_TAG not found; run ref/build-image.sh"
 echo "  ok"
@@ -48,7 +40,7 @@ FULL_NAME="$(full_name "$SANDBOX_NAME")"
 
 trap 'cleanup_sandbox "$SANDBOX_NAME"' EXIT
 
-echo "[3/$TOTAL] End-to-end round-trip ($SANDBOX_NAME)..."
+echo "End-to-end round-trip ($SANDBOX_NAME)..."
 
 sb_up "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh up failed"
 
@@ -73,7 +65,7 @@ echo "  ok"
 #    exit code" contract.
 NEG_NAME="verify-neg-$$-$RANDOM"
 trap 'cleanup_sandbox "$NEG_NAME"' EXIT
-echo "[4/$TOTAL] exec proxies non-zero exit ($NEG_NAME)..."
+echo "exec proxies non-zero exit ($NEG_NAME)..."
 sb_up "$NEG_NAME" >/dev/null
 ! sb_exec "$NEG_NAME" -- false \
   || fail "'sandbox.sh exec ... -- false' returned 0; exit code not proxied"
@@ -94,7 +86,7 @@ echo "payload-B-$RANDOM" > "$MNT_B/probe"
 EXP_A="$(cat "$MNT_A/probe")"
 EXP_B="$(cat "$MNT_B/probe")"
 trap 'cleanup_sandbox "$MNT_NAME"; rm -rf "$MNT_A" "$MNT_B"' EXIT
-echo "[5/$TOTAL] --mount round-trip with two mounts ($MNT_NAME)..."
+echo "--mount round-trip with two mounts ($MNT_NAME)..."
 sb_up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
 
 # Read: both mounts visible from inside.
@@ -120,7 +112,7 @@ echo "  ok"
 # 6. Collision: a second `up` with the same name MUST fail.
 COL_NAME="verify-col-$$-$RANDOM"
 trap 'cleanup_sandbox "$COL_NAME"' EXIT
-echo "[6/$TOTAL] up rejects duplicate name without --recreate..."
+echo "up rejects duplicate name without --recreate..."
 sb_up "$COL_NAME" >/dev/null
 ! sb_up "$COL_NAME" >/dev/null 2>&1 \
   || fail "second 'up' without --recreate should have errored"
@@ -128,7 +120,7 @@ echo "  ok"
 
 # 7. --recreate: replaces an existing sandbox in place. The current container
 #    keeps the same name and is usable for exec.
-echo "[7/$TOTAL] --recreate replaces existing sandbox..."
+echo "--recreate replaces existing sandbox..."
 sb_up "$COL_NAME" --recreate >/dev/null
 OUT="$(sb_exec "$COL_NAME" -- echo recreated)"
 [ "$OUT" = "recreated" ] || fail "--recreate sandbox not usable; got '$OUT'"
@@ -137,19 +129,19 @@ trap - EXIT
 echo "  ok"
 
 # 8. Idempotent down: `down` on a never-created name MUST exit 0.
-echo "[8/$TOTAL] down on absent sandbox exits 0..."
+echo "down on absent sandbox exits 0..."
 sb_down "verify-absent-$$-$RANDOM" >/dev/null \
   || fail "down on never-created sandbox should be a no-op"
 echo "  ok"
 
 # 9. preflight aborts on Intel Mac (named arm of detect_runtime's matrix).
-echo "[9/$TOTAL] preflight aborts on Intel Mac..."
+echo "preflight aborts on Intel Mac..."
 ! echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1 \
   || fail "preflight should have aborted on Darwin/x86_64 (Intel Mac)"
 echo "  ok"
 
 # 10. preflight aborts on any other unsupported host (catch-all arm).
-echo "[10/$TOTAL] preflight aborts on other unsupported host..."
+echo "preflight aborts on other unsupported host..."
 ! echo y | UNAME_S=FreeBSD UNAME_M=amd64 bash ref/preflight.sh >/dev/null 2>&1 \
   || fail "preflight should have aborted on FreeBSD/amd64"
 echo "  ok"
@@ -161,7 +153,7 @@ echo "  ok"
 #     test portability; this prompt pins the actual contract.
 ID_NAME="verify-id-$$-$RANDOM"
 trap 'cleanup_sandbox "$ID_NAME"' EXIT
-echo "[11/$TOTAL] container user is uid 1000 with passwordless sudo..."
+echo "container user is uid 1000 with passwordless sudo..."
 sb_up "$ID_NAME" >/dev/null
 USER_UID="$(sb_exec "$ID_NAME" -- id -u)"
 [ "$USER_UID" = "1000" ] || fail "container user uid expected 1000, got '$USER_UID'"
@@ -175,7 +167,7 @@ echo "  ok"
 #     clear message, not silently auto-create a root-owned dir. A relative
 #     host path MUST abort separately even if it exists, because docker -v
 #     would treat 'name:/x' as a named volume, not a bind mount.
-echo "[12/$TOTAL] --mount rejects missing and relative host paths..."
+echo "--mount rejects missing and relative host paths..."
 
 MISSING="/tmp/verify-absent-$$-$RANDOM"
 [ -e "$MISSING" ] && fail "test setup bug: $MISSING shouldn't exist"
@@ -208,7 +200,7 @@ echo "  ok"
 #     contributor on Linux can still catch a regression on the macOS path.
 #     Reuses test 9's UNAME_S env-var override seam and test 14's PATH-shadow
 #     seam.
-echo "[13/$TOTAL] preflight install grammar on Darwin/arm64..."
+echo "preflight install grammar on Darwin/arm64..."
 PFB_DIR="$(mktemp -d)"
 PFB_LOG="$PFB_DIR/calls.log"
 trap 'rm -rf "$PFB_DIR"' EXIT
@@ -257,7 +249,7 @@ echo "  ok"
 #     CI. PATH-shadows a fake `container` that ONLY accepts `list --all
 #     --quiet` (with exactly 3 args) — any drift in argv shape errors loud.
 #     Reuses test 9's UNAME_S override and test 13's PATH-shadow seam.
-echo "[14/$TOTAL] sandbox.sh list (Darwin) uses 'container list --all --quiet'..."
+echo "sandbox.sh list (Darwin) uses 'container list --all --quiet'..."
 CLG_DIR="$(mktemp -d)"
 trap 'rm -rf "$CLG_DIR"' EXIT
 cat > "$CLG_DIR/container" <<'FAKE'
@@ -284,7 +276,7 @@ echo "  ok"
 #     exits non-zero; sandbox.sh down must propagate. Apple `container` doesn't
 #     share the docker binary name, so the PATH shadow can't bite on macOS.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[15/$TOTAL] cmd_down propagates daemon errors..."
+  echo "cmd_down propagates daemon errors..."
   FAKE_BIN="$(mktemp -d)"
   trap 'rm -rf "$FAKE_BIN"' EXIT
   cat > "$FAKE_BIN/docker" <<'FAKE'
@@ -307,7 +299,7 @@ fi
 #     would falsely block `sandbox.sh up`. Apple `container` doesn't share
 #     this namespace so the probe is docker-only.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[16/$TOTAL] cmd_up ignores non-container docker objects..."
+  echo "cmd_up ignores non-container docker objects..."
   VOL_NAME="verify-vol-$$-$RANDOM"
   FULL_VOL="$(full_name "$VOL_NAME")"
   docker volume create "$FULL_VOL" >/dev/null
