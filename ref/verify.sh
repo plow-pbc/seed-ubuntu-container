@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=9
+TOTAL=10
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -75,26 +75,30 @@ bash ref/sandbox.sh down "$NEG_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
-# 5. --mount round-trip. A host directory injected into the sandbox must be
-#    readable from inside — pins the documented `--mount HOST:CONTAINER` flag.
+# 5. --mount round-trip with TWO mounts. Repeated --mount flags MUST stack
+#    (not overwrite), so consumers can inject workspace + config separately.
 MNT_NAME="verify-mnt-$$-$RANDOM"
-MNT_HOST="$(mktemp -d)"
-# mktemp creates 0700; widen to 0755 so the non-root sandbox user (uid 1001)
-# can traverse the bind-mounted directory.
-chmod 0755 "$MNT_HOST"
-echo "verify-payload-$RANDOM" > "$MNT_HOST/probe"
-EXPECTED="$(cat "$MNT_HOST/probe")"
+MNT_A="$(mktemp -d)"
+MNT_B="$(mktemp -d)"
+# mktemp creates 0700; widen so the non-root sandbox user can traverse.
+chmod 0755 "$MNT_A" "$MNT_B"
+echo "payload-A-$RANDOM" > "$MNT_A/probe"
+echo "payload-B-$RANDOM" > "$MNT_B/probe"
+EXP_A="$(cat "$MNT_A/probe")"
+EXP_B="$(cat "$MNT_B/probe")"
 cleanup_mnt() {
   bash ref/sandbox.sh down "$MNT_NAME" >/dev/null 2>&1 || true
-  rm -rf "$MNT_HOST"
+  rm -rf "$MNT_A" "$MNT_B"
 }
 trap cleanup_mnt EXIT
-echo "[5/$TOTAL] --mount round-trip ($MNT_NAME)..."
-bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_HOST:/probe" >/dev/null
-GOT="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /probe/probe)"
-[ "$GOT" = "$EXPECTED" ] || fail "--mount round-trip: expected '$EXPECTED', got '$GOT'"
+echo "[5/$TOTAL] --mount round-trip with two mounts ($MNT_NAME)..."
+bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
+GOT_A="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /a/probe)"
+GOT_B="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /b/probe)"
+[ "$GOT_A" = "$EXP_A" ] || fail "--mount A: expected '$EXP_A', got '$GOT_A'"
+[ "$GOT_B" = "$EXP_B" ] || fail "--mount B (later mount lost?): expected '$EXP_B', got '$GOT_B'"
 bash ref/sandbox.sh down "$MNT_NAME" >/dev/null
-rm -rf "$MNT_HOST"
+rm -rf "$MNT_A" "$MNT_B"
 trap - EXIT
 echo "  ok"
 
@@ -126,11 +130,16 @@ bash ref/sandbox.sh down "verify-absent-$$-$RANDOM" >/dev/null \
   || fail "down on never-created sandbox should be a no-op"
 echo "  ok"
 
-# 9. preflight aborts on unsupported host (the SEED's explicit fail-fast
-#    guarantee: no Colima fallback, no silent substitution).
+# 9. preflight aborts on Intel Mac (named arm of detect_runtime's matrix).
 echo "[9/$TOTAL] preflight aborts on Intel Mac..."
 ! echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1 \
   || fail "preflight should have aborted on Darwin/x86_64 (Intel Mac)"
+echo "  ok"
+
+# 10. preflight aborts on any other unsupported host (catch-all arm).
+echo "[10/$TOTAL] preflight aborts on other unsupported host..."
+! echo y | UNAME_S=FreeBSD UNAME_M=amd64 bash ref/preflight.sh >/dev/null 2>&1 \
+  || fail "preflight should have aborted on FreeBSD/amd64"
 echo "  ok"
 
 echo "All checks passed."
