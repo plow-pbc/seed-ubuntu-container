@@ -46,8 +46,8 @@ if [ "$install_runtime" = 1 ]; then
       echo "  command:       sudo systemctl enable --now docker"
       ;;
     container)
-      echo "  command:       brew install --cask container"
-      echo "  command:       container system start"
+      echo "  command:       brew install container"
+      echo "  command:       container system start --enable-kernel-install"
       ;;
   esac
 else
@@ -76,8 +76,8 @@ if [ "$install_runtime" = 1 ]; then
     container)
       command -v brew >/dev/null 2>&1 \
         || abort "Homebrew required to install apple container CLI. Install brew first."
-      brew install --cask container
-      container system start
+      brew install container
+      container system start --enable-kernel-install
       ;;
   esac
 fi

@@ -60,7 +60,7 @@ cmd_up() {
     fi
   fi
 
-  "$RUNTIME" run -d --name "$fn" "${mount_args[@]}" "$tag" >/dev/null
+  "$RUNTIME" run -d --name "$fn" ${mount_args[@]+"${mount_args[@]}"} "$tag" >/dev/null
   echo "$fn"
 }
 
@@ -95,10 +95,14 @@ cmd_list() {
       docker ps -a --filter "name=^${NAME_PREFIX}-" --format '{{.Names}}'
       ;;
     container)
+      # Apple `container list --quiet` prints container IDs, which for
+      # `container run --name X` are X — i.e. the names. Docker-style
+      # `--format '{{.Names}}'` is not supported by Apple's CLI (only
+      # json/table/yaml).
       # Capture-then-filter: a container-list failure propagates via set -e,
       # but the grep no-match is softened (empty list is not an error).
       local listing
-      listing="$(container list --all --format '{{.Names}}')"
+      listing="$(container list --all --quiet)"
       printf '%s\n' "$listing" | grep "^${NAME_PREFIX}-" || true
       ;;
   esac
