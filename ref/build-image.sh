@@ -6,6 +6,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
+# shellcheck source=lib.sh
+. "$REPO_ROOT/ref/lib.sh"
 
 case "$(uname -s)" in
   Linux)  RUNTIME="docker" ;;
@@ -13,7 +15,7 @@ case "$(uname -s)" in
   *) echo "unsupported host: $(uname -s)" >&2; exit 1 ;;
 esac
 
-IMAGE_SHA="$(sha256sum ref/Dockerfile | awk '{print $1}')"
+IMAGE_SHA="$(sha256_file ref/Dockerfile)"
 IMAGE_TAG="seed-ubuntu:${IMAGE_SHA}"
 
 if "$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1; then

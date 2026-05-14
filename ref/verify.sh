@@ -6,6 +6,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
+# shellcheck source=lib.sh
+. "$REPO_ROOT/ref/lib.sh"
 
 # Detect runtime (matches sandbox.sh logic).
 case "$(uname -s)" in
@@ -15,7 +17,7 @@ case "$(uname -s)" in
 esac
 
 # Image tag = sha256 of Dockerfile content.
-IMAGE_SHA="$(sha256sum ref/Dockerfile | awk '{print $1}')"
+IMAGE_SHA="$(sha256_file ref/Dockerfile)"
 IMAGE_TAG="seed-ubuntu:${IMAGE_SHA}"
 
 # 1. Runtime is healthy.

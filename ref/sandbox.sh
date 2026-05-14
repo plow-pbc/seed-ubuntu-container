@@ -9,6 +9,8 @@ set -euo pipefail
 #   sandbox.sh list
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib.sh
+. "$REPO_ROOT/ref/lib.sh"
 NAME_PREFIX="seed-ubuntu"
 
 case "$(uname -s)" in
@@ -18,9 +20,7 @@ case "$(uname -s)" in
 esac
 
 image_tag() {
-  local sha
-  sha="$(sha256sum "$REPO_ROOT/ref/Dockerfile" | awk '{print $1}')"
-  echo "seed-ubuntu:${sha}"
+  echo "seed-ubuntu:$(sha256_file "$REPO_ROOT/ref/Dockerfile")"
 }
 
 full_name() {
