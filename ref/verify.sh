@@ -14,24 +14,20 @@ IMAGE_TAG="$(image_tag)"
 
 TOTAL=9
 
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
 case "$RUNTIME" in
-  docker)
-    docker version --format '{{.Server.Version}}' >/dev/null \
-      || { echo "FAIL: docker not responsive" >&2; exit 1; }
-    ;;
-  container)
-    container --version >/dev/null \
-      || { echo "FAIL: apple container CLI not responsive" >&2; exit 1; }
-    ;;
+  docker)    docker version --format '{{.Server.Version}}' >/dev/null || fail "docker not responsive" ;;
+  container) container --version >/dev/null || fail "apple container CLI not responsive" ;;
 esac
 echo "  ok"
 
 # 2. Base image is present.
 echo "[2/$TOTAL] Base image $IMAGE_TAG is present..."
 "$RUNTIME" image inspect "$IMAGE_TAG" >/dev/null 2>&1 \
-  || { echo "FAIL: image $IMAGE_TAG not found; run ref/build-image.sh" >&2; exit 1; }
+  || fail "image $IMAGE_TAG not found; run ref/build-image.sh"
 echo "  ok"
 
 # 3. End-to-end round-trip. Spin up, exec echo hello, down, confirm no residue.
@@ -45,29 +41,20 @@ trap cleanup EXIT
 
 echo "[3/$TOTAL] End-to-end round-trip ($SANDBOX_NAME)..."
 
-bash ref/sandbox.sh up "$SANDBOX_NAME" >/dev/null \
-  || { echo "FAIL: sandbox.sh up failed" >&2; exit 1; }
+bash ref/sandbox.sh up "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh up failed"
 
 # Positive list assertion: running sandbox MUST appear in list output.
-if ! bash ref/sandbox.sh list | grep -Fxq "$FULL_NAME"; then
-  echo "FAIL: list did not include running sandbox $FULL_NAME" >&2
-  exit 1
-fi
+bash ref/sandbox.sh list | grep -Fxq "$FULL_NAME" \
+  || fail "list did not include running sandbox $FULL_NAME"
 
 OUT="$(bash ref/sandbox.sh exec "$SANDBOX_NAME" -- echo hello)"
-if [ "$OUT" != "hello" ]; then
-  echo "FAIL: expected 'hello', got '$OUT'" >&2
-  exit 1
-fi
+[ "$OUT" = "hello" ] || fail "expected 'hello', got '$OUT'"
 
-bash ref/sandbox.sh down "$SANDBOX_NAME" >/dev/null \
-  || { echo "FAIL: sandbox.sh down failed" >&2; exit 1; }
+bash ref/sandbox.sh down "$SANDBOX_NAME" >/dev/null || fail "sandbox.sh down failed"
 
 # Confirm no residue.
-if bash ref/sandbox.sh list | grep -q "$FULL_NAME"; then
-  echo "FAIL: sandbox $FULL_NAME still present after down" >&2
-  exit 1
-fi
+! bash ref/sandbox.sh list | grep -q "$FULL_NAME" \
+  || fail "sandbox $FULL_NAME still present after down"
 
 trap - EXIT
 echo "  ok"
@@ -82,10 +69,8 @@ cleanup_neg() {
 trap cleanup_neg EXIT
 echo "[4/$TOTAL] exec proxies non-zero exit ($NEG_NAME)..."
 bash ref/sandbox.sh up "$NEG_NAME" >/dev/null
-if bash ref/sandbox.sh exec "$NEG_NAME" -- false; then
-  echo "FAIL: 'sandbox.sh exec ... -- false' returned 0; exit code not proxied" >&2
-  exit 1
-fi
+! bash ref/sandbox.sh exec "$NEG_NAME" -- false \
+  || fail "'sandbox.sh exec ... -- false' returned 0; exit code not proxied"
 bash ref/sandbox.sh down "$NEG_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
@@ -107,10 +92,7 @@ trap cleanup_mnt EXIT
 echo "[5/$TOTAL] --mount round-trip ($MNT_NAME)..."
 bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_HOST:/probe" >/dev/null
 GOT="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /probe/probe)"
-if [ "$GOT" != "$EXPECTED" ]; then
-  echo "FAIL: --mount round-trip: expected '$EXPECTED', got '$GOT'" >&2
-  exit 1
-fi
+[ "$GOT" = "$EXPECTED" ] || fail "--mount round-trip: expected '$EXPECTED', got '$GOT'"
 bash ref/sandbox.sh down "$MNT_NAME" >/dev/null
 rm -rf "$MNT_HOST"
 trap - EXIT
@@ -124,10 +106,8 @@ cleanup_col() {
 trap cleanup_col EXIT
 echo "[6/$TOTAL] up rejects duplicate name without --recreate..."
 bash ref/sandbox.sh up "$COL_NAME" >/dev/null
-if bash ref/sandbox.sh up "$COL_NAME" >/dev/null 2>&1; then
-  echo "FAIL: second 'up' without --recreate should have errored" >&2
-  exit 1
-fi
+! bash ref/sandbox.sh up "$COL_NAME" >/dev/null 2>&1 \
+  || fail "second 'up' without --recreate should have errored"
 echo "  ok"
 
 # 7. --recreate: replaces an existing sandbox in place. The current container
@@ -135,29 +115,22 @@ echo "  ok"
 echo "[7/$TOTAL] --recreate replaces existing sandbox..."
 bash ref/sandbox.sh up "$COL_NAME" --recreate >/dev/null
 OUT="$(bash ref/sandbox.sh exec "$COL_NAME" -- echo recreated)"
-if [ "$OUT" != "recreated" ]; then
-  echo "FAIL: --recreate sandbox not usable; got '$OUT'" >&2
-  exit 1
-fi
+[ "$OUT" = "recreated" ] || fail "--recreate sandbox not usable; got '$OUT'"
 bash ref/sandbox.sh down "$COL_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
 # 8. Idempotent down: `down` on a never-created name MUST exit 0.
 echo "[8/$TOTAL] down on absent sandbox exits 0..."
-if ! bash ref/sandbox.sh down "verify-absent-$$-$RANDOM" >/dev/null; then
-  echo "FAIL: down on never-created sandbox should be a no-op" >&2
-  exit 1
-fi
+bash ref/sandbox.sh down "verify-absent-$$-$RANDOM" >/dev/null \
+  || fail "down on never-created sandbox should be a no-op"
 echo "  ok"
 
 # 9. preflight aborts on unsupported host (the SEED's explicit fail-fast
 #    guarantee: no Colima fallback, no silent substitution).
 echo "[9/$TOTAL] preflight aborts on Intel Mac..."
-if echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1; then
-  echo "FAIL: preflight should have aborted on Darwin/x86_64 (Intel Mac)" >&2
-  exit 1
-fi
+! echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1 \
+  || fail "preflight should have aborted on Darwin/x86_64 (Intel Mac)"
 echo "  ok"
 
 echo "All checks passed."
