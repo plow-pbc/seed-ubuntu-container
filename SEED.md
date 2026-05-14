@@ -113,6 +113,7 @@ A deterministic implementation lives at [`ref/verify.sh`](ref/verify.sh).
 - No `sandbox.sh cp`. Consumers use `--mount` (live) or `exec ... -- bash -c '...'` (snapshot). Add `cp` in v1 if a host-to-sandbox file-copy pattern recurs. ^o-cp
 - No Windows host. WSL2 + Docker probably works as a Linux host but is unverified. ^o-windows
 - Image tag is content-addressed by Dockerfile source, not built image. amd64 and arm64 builds share a tag locally. Fine for local-only use; revisit if v1 pushes to a registry. ^o-multiarch
+- Apple `container` CLI subcommand compatibility with Docker is unverified. `sandbox.sh` assumes `image inspect`, `inspect`, `run -d --name -v`, `exec`, `rm -f`, and `build --tag` overlap with Docker; `list` is the one known-differing surface and already has a case-split. First Mac user to exercise the path reports actual divergence; if other subcommands also differ, refactor those behind per-operation helpers in `ref/lib.sh`. Not preempted because the cost stance is "cut LOC over add" — no parallel API seam built on a guess. ^o-apple-grammar
 
 ## Non-Goals
 
