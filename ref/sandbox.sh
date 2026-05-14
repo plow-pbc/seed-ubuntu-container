@@ -62,8 +62,15 @@ cmd_exec() {
 cmd_down() {
   local name="$1"
   local fn; fn="$(full_name "$name")"
-  # Idempotent only for the absent case. Real runtime errors propagate.
-  if "$RUNTIME" inspect "$fn" >/dev/null 2>&1; then
+  # Idempotent only for the absent case. `inspect` can't distinguish absent
+  # from daemon-error (both exit non-zero), so use a list-and-filter query
+  # that fails loudly on daemon errors but returns empty on absent.
+  local listing
+  case "$RUNTIME" in
+    docker)    listing="$(docker ps -a --filter "name=^${fn}$" --format '{{.Names}}')" ;;
+    container) listing="$(container list --all --format '{{.Names}}')" ;;
+  esac
+  if printf '%s\n' "$listing" | grep -Fxq "$fn"; then
     "$RUNTIME" rm -f "$fn" >/dev/null
   fi
 }
