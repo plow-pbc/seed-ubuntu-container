@@ -112,6 +112,7 @@ In addition to the three prompts above, `ref/verify.sh` pins individual Object/A
 - No Windows host. WSL2 + Docker probably works as a Linux host but is unverified. ^o-windows
 - Image tag is content-addressed by Dockerfile source, not built image. amd64 and arm64 builds share a tag locally. Fine for local-only use; revisit if v1 pushes to a registry. ^o-multiarch
 - Apple `container` CLI subcommand compatibility with Docker is unverified. `sandbox.sh` assumes `image inspect`, `inspect`, `run -d --name -v`, `exec`, `rm -f`, and `build --tag` overlap with Docker; `list` is the one known-differing surface and already has a case-split. First Mac user to exercise the path reports actual divergence; if other subcommands also differ, refactor those behind per-operation helpers in `ref/lib.sh`. Not preempted because the cost stance is "cut LOC over add" — no parallel API seam built on a guess. ^o-apple-grammar
+- `--mount` writability assumes the host directory is owned by uid 1000 (matching the sandbox's `ubuntu` user). Hosts where the developer runs at a different uid (some CI runners, macOS, nonstandard Linux accounts) can still read via `chmod` widening or sudo through the container's passwordless sudo. v0 supports the uid-1000 host contract; if cross-uid writable workspaces become a real pattern, add a runtime-determined `--user` flag on `up` in v1. ^o-non-1000-uid
 
 ## Non-Goals
 
@@ -120,4 +121,4 @@ In addition to the three prompts above, `ref/verify.sh` pins individual Object/A
 - Not a registry. Image lives locally.
 - Not an orchestrator. One sandbox per name; no compose/swarm/pod abstractions.
 - Not a Claude Code skill. A `/seed-create` skill would be a downstream consumer that calls `sandbox.sh`.
-- Not a security boundary. The sandbox `seed` user has passwordless sudo; `--mount` exposes host paths as writable; preflight's docker-group add is host-root-equivalent (docker's own threat model). For running untrusted code, reach for a VM (Lima, Firecracker), not this SEED.
+- Not a security boundary. The sandbox `ubuntu` user (uid 1000) has passwordless sudo; `--mount` exposes host paths as writable; preflight's docker-group add is host-root-equivalent (docker's own threat model). For running untrusted code, reach for a VM (Lima, Firecracker), not this SEED.
