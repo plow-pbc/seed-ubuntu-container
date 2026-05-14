@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=6
+TOTAL=9
 
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
@@ -47,6 +47,12 @@ echo "[3/$TOTAL] End-to-end round-trip ($SANDBOX_NAME)..."
 
 bash ref/sandbox.sh up "$SANDBOX_NAME" >/dev/null \
   || { echo "FAIL: sandbox.sh up failed" >&2; exit 1; }
+
+# Positive list assertion: running sandbox MUST appear in list output.
+if ! bash ref/sandbox.sh list | grep -Fxq "$FULL_NAME"; then
+  echo "FAIL: list did not include running sandbox $FULL_NAME" >&2
+  exit 1
+fi
 
 OUT="$(bash ref/sandbox.sh exec "$SANDBOX_NAME" -- echo hello)"
 if [ "$OUT" != "hello" ]; then
@@ -110,9 +116,44 @@ rm -rf "$MNT_HOST"
 trap - EXIT
 echo "  ok"
 
-# 6. preflight aborts on unsupported host (the SEED's explicit fail-fast
+# 6. Collision: a second `up` with the same name MUST fail.
+COL_NAME="verify-col-$$-$RANDOM"
+cleanup_col() {
+  bash ref/sandbox.sh down "$COL_NAME" >/dev/null 2>&1 || true
+}
+trap cleanup_col EXIT
+echo "[6/$TOTAL] up rejects duplicate name without --recreate..."
+bash ref/sandbox.sh up "$COL_NAME" >/dev/null
+if bash ref/sandbox.sh up "$COL_NAME" >/dev/null 2>&1; then
+  echo "FAIL: second 'up' without --recreate should have errored" >&2
+  exit 1
+fi
+echo "  ok"
+
+# 7. --recreate: replaces an existing sandbox in place. The current container
+#    keeps the same name and is usable for exec.
+echo "[7/$TOTAL] --recreate replaces existing sandbox..."
+bash ref/sandbox.sh up "$COL_NAME" --recreate >/dev/null
+OUT="$(bash ref/sandbox.sh exec "$COL_NAME" -- echo recreated)"
+if [ "$OUT" != "recreated" ]; then
+  echo "FAIL: --recreate sandbox not usable; got '$OUT'" >&2
+  exit 1
+fi
+bash ref/sandbox.sh down "$COL_NAME" >/dev/null
+trap - EXIT
+echo "  ok"
+
+# 8. Idempotent down: `down` on a never-created name MUST exit 0.
+echo "[8/$TOTAL] down on absent sandbox exits 0..."
+if ! bash ref/sandbox.sh down "verify-absent-$$-$RANDOM" >/dev/null; then
+  echo "FAIL: down on never-created sandbox should be a no-op" >&2
+  exit 1
+fi
+echo "  ok"
+
+# 9. preflight aborts on unsupported host (the SEED's explicit fail-fast
 #    guarantee: no Colima fallback, no silent substitution).
-echo "[6/$TOTAL] preflight aborts on Intel Mac..."
+echo "[9/$TOTAL] preflight aborts on Intel Mac..."
 if echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1; then
   echo "FAIL: preflight should have aborted on Darwin/x86_64 (Intel Mac)" >&2
   exit 1
