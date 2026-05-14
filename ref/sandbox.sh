@@ -21,7 +21,12 @@ cmd_up() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --recreate) recreate=1; shift ;;
-      --mount)    mount_args+=(-v "$2"); shift 2 ;;
+      --mount)
+        # Fail loud on typos. Docker -v silently creates absent host paths
+        # (owned by root), which is a footgun.
+        local host="${2%%:*}"
+        [ -e "$host" ] || { echo "sandbox.sh up: --mount host path missing: $host" >&2; exit 2; }
+        mount_args+=(-v "$2"); shift 2 ;;
       *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac
   done
@@ -81,7 +86,11 @@ cmd_list() {
       docker ps -a --filter "name=^${NAME_PREFIX}-" --format '{{.Names}}'
       ;;
     container)
-      container list --all --format '{{.Names}}' | grep "^${NAME_PREFIX}-" || true
+      # Capture-then-filter: a container-list failure propagates via set -e,
+      # but the grep no-match is softened (empty list is not an error).
+      local listing
+      listing="$(container list --all --format '{{.Names}}')"
+      printf '%s\n' "$listing" | grep "^${NAME_PREFIX}-" || true
       ;;
   esac
 }
