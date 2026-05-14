@@ -76,7 +76,7 @@ cmd_down() {
   local fn; fn="$(full_name "$name")"
   # Idempotent only for the absent case. Capture cmd_list to a variable first
   # — wrapping it in `if cmd_list | ...; then` would suppress set -e on
-  # daemon failures (verified by prompt 13).
+  # daemon failures.
   local listing
   listing="$(cmd_list)"
   if printf '%s\n' "$listing" | grep -Fxq "$fn"; then

@@ -13,6 +13,10 @@ RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
 TOTAL=13
+# Apple `container` doesn't have a docker-style cross-object name namespace
+# (image/volume/network/container all share names), so the volume-collision
+# probe at the end is docker-only — extra prompt on docker hosts.
+[ "$RUNTIME" = "docker" ] && TOTAL=14
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
@@ -201,5 +205,25 @@ chmod +x "$FAKE_BIN/docker"
 rm -rf "$FAKE_BIN"
 trap - EXIT
 echo "  ok"
+
+# 14. (Docker only) cmd_up's collision check must NOT match non-container
+#     docker objects. Round-10 narrowed from `docker inspect` (matches
+#     containers/images/volumes/networks) via `cmd_list` (containers only).
+#     If someone reverts to broad inspect, a same-named docker volume
+#     would falsely block `sandbox.sh up`. Apple `container` doesn't share
+#     this namespace so the probe is docker-only.
+if [ "$RUNTIME" = "docker" ]; then
+  echo "[14/$TOTAL] cmd_up ignores non-container docker objects..."
+  VOL_NAME="verify-vol-$$-$RANDOM"
+  FULL_VOL="$(full_name "$VOL_NAME")"
+  docker volume create "$FULL_VOL" >/dev/null
+  trap 'cleanup_sandbox "$VOL_NAME"; docker volume rm -f "$FULL_VOL" >/dev/null 2>&1 || true' EXIT
+  bash ref/sandbox.sh up "$VOL_NAME" >/dev/null \
+    || fail "sandbox.sh up errored on volume-name collision (regressed to broad inspect?)"
+  bash ref/sandbox.sh down "$VOL_NAME" >/dev/null
+  docker volume rm -f "$FULL_VOL" >/dev/null
+  trap - EXIT
+  echo "  ok"
+fi
 
 echo "All checks passed."
