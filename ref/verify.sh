@@ -15,6 +15,7 @@ IMAGE_TAG="$(image_tag)"
 TOTAL=10
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+cleanup_sandbox() { bash ref/sandbox.sh down "$1" >/dev/null 2>&1 || true; }
 
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
@@ -34,10 +35,7 @@ echo "  ok"
 SANDBOX_NAME="verify-$$-$RANDOM"
 FULL_NAME="$(full_name "$SANDBOX_NAME")"
 
-cleanup() {
-  bash ref/sandbox.sh down "$SANDBOX_NAME" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
+trap 'cleanup_sandbox "$SANDBOX_NAME"' EXIT
 
 echo "[3/$TOTAL] End-to-end round-trip ($SANDBOX_NAME)..."
 
@@ -63,10 +61,7 @@ echo "  ok"
 #    via the host wrapper — pins the documented "MUST proxy the inner command's
 #    exit code" contract.
 NEG_NAME="verify-neg-$$-$RANDOM"
-cleanup_neg() {
-  bash ref/sandbox.sh down "$NEG_NAME" >/dev/null 2>&1 || true
-}
-trap cleanup_neg EXIT
+trap 'cleanup_sandbox "$NEG_NAME"' EXIT
 echo "[4/$TOTAL] exec proxies non-zero exit ($NEG_NAME)..."
 bash ref/sandbox.sh up "$NEG_NAME" >/dev/null
 ! bash ref/sandbox.sh exec "$NEG_NAME" -- false \
@@ -86,11 +81,7 @@ echo "payload-A-$RANDOM" > "$MNT_A/probe"
 echo "payload-B-$RANDOM" > "$MNT_B/probe"
 EXP_A="$(cat "$MNT_A/probe")"
 EXP_B="$(cat "$MNT_B/probe")"
-cleanup_mnt() {
-  bash ref/sandbox.sh down "$MNT_NAME" >/dev/null 2>&1 || true
-  rm -rf "$MNT_A" "$MNT_B"
-}
-trap cleanup_mnt EXIT
+trap 'cleanup_sandbox "$MNT_NAME"; rm -rf "$MNT_A" "$MNT_B"' EXIT
 echo "[5/$TOTAL] --mount round-trip with two mounts ($MNT_NAME)..."
 bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
 GOT_A="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /a/probe)"
@@ -104,10 +95,7 @@ echo "  ok"
 
 # 6. Collision: a second `up` with the same name MUST fail.
 COL_NAME="verify-col-$$-$RANDOM"
-cleanup_col() {
-  bash ref/sandbox.sh down "$COL_NAME" >/dev/null 2>&1 || true
-}
-trap cleanup_col EXIT
+trap 'cleanup_sandbox "$COL_NAME"' EXIT
 echo "[6/$TOTAL] up rejects duplicate name without --recreate..."
 bash ref/sandbox.sh up "$COL_NAME" >/dev/null
 ! bash ref/sandbox.sh up "$COL_NAME" >/dev/null 2>&1 \
