@@ -47,24 +47,28 @@ case "$UNAME_S" in
 esac
 
 # 3. Print plan + confirm. Show the exact commands the user is about to consent to.
-install_cmd=""
-case "$runtime" in
-  docker)    install_cmd='curl -fsSL https://get.docker.com | sudo sh' ;;
-  container) install_cmd='brew install --cask container' ;;
-esac
-
 echo "Preflight plan:"
 echo "  host:          $UNAME_S/$UNAME_M"
 echo "  runtime:       $runtime"
 if [ "$install_runtime" = 1 ]; then
   echo "  install:       $runtime"
-  echo "  command:       $install_cmd"
+  case "$runtime" in
+    docker)
+      echo "  command:       curl -fsSL https://get.docker.com | sudo sh"
+      echo "  command:       sudo systemctl enable --now docker"
+      ;;
+    container)
+      echo "  command:       brew install --cask container"
+      echo "  command:       container system start"
+      ;;
+  esac
 else
   echo "  install:       (already present)"
 fi
 if [ "$install_group" = 1 ]; then
   echo "  group:         add $USER to docker group (re-login required)"
   echo "  command:       sudo usermod -aG docker $USER"
+  echo "  WARNING:       docker-group membership is host-root-equivalent"
 fi
 echo
 
