@@ -75,8 +75,9 @@ echo "  ok"
 MNT_NAME="verify-mnt-$$-$RANDOM"
 MNT_A="$(mktemp -d)"
 MNT_B="$(mktemp -d)"
-# mktemp creates 0700; widen so the non-root sandbox user can traverse.
-chmod 0755 "$MNT_A" "$MNT_B"
+# mktemp creates 0700; widen to 0777 so this test works regardless of the
+# host user's UID (test machine may not be UID 1000).
+chmod 0777 "$MNT_A" "$MNT_B"
 echo "payload-A-$RANDOM" > "$MNT_A/probe"
 echo "payload-B-$RANDOM" > "$MNT_B/probe"
 EXP_A="$(cat "$MNT_A/probe")"
@@ -84,10 +85,22 @@ EXP_B="$(cat "$MNT_B/probe")"
 trap 'cleanup_sandbox "$MNT_NAME"; rm -rf "$MNT_A" "$MNT_B"' EXIT
 echo "[5/$TOTAL] --mount round-trip with two mounts ($MNT_NAME)..."
 bash ref/sandbox.sh up "$MNT_NAME" --mount "$MNT_A:/a" --mount "$MNT_B:/b" >/dev/null
+
+# Read: both mounts visible from inside.
 GOT_A="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /a/probe)"
 GOT_B="$(bash ref/sandbox.sh exec "$MNT_NAME" -- cat /b/probe)"
 [ "$GOT_A" = "$EXP_A" ] || fail "--mount A: expected '$EXP_A', got '$GOT_A'"
 [ "$GOT_B" = "$EXP_B" ] || fail "--mount B (later mount lost?): expected '$EXP_B', got '$GOT_B'"
+
+# Write: container writes a file into /a, host MUST see it. Pins the
+# README's "writable mount" promise — the sandbox user (uid 1000, matching
+# typical Linux devs) can write through bind-mounts without sudo.
+WROTE="wrote-from-sandbox-$RANDOM"
+bash ref/sandbox.sh exec "$MNT_NAME" -- bash -c "echo $WROTE > /a/written"
+[ -f "$MNT_A/written" ] || fail "--mount A: write from sandbox did not reach host (no file)"
+[ "$(cat "$MNT_A/written")" = "$WROTE" ] \
+  || fail "--mount A: write from sandbox reached host but content mismatched"
+
 bash ref/sandbox.sh down "$MNT_NAME" >/dev/null
 rm -rf "$MNT_A" "$MNT_B"
 trap - EXIT

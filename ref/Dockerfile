@@ -10,11 +10,14 @@ RUN apt-get update \
       sudo \
  && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home --shell /bin/bash --uid 1001 seed \
- && echo "seed ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/seed \
- && chmod 0440 /etc/sudoers.d/seed
+# ubuntu:24.04 ships a pre-existing `ubuntu` user at UID 1000. Reusing it
+# (instead of creating a `seed` user at 1001) means bind-mounted host paths
+# owned by a typical Linux developer (also UID 1000) are read+write inside
+# the sandbox without sudo — matching the README's writable-mount contract.
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
+ && chmod 0440 /etc/sudoers.d/ubuntu
 
-USER seed
-WORKDIR /home/seed
+USER ubuntu
+WORKDIR /home/ubuntu
 
 CMD ["sleep", "infinity"]
