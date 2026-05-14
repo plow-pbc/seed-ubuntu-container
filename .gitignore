@@ -1,0 +1,13 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local-only planning artifacts (CLAUDE.md "Don't Commit Plans")
+docs/plans/
+
+# Tmp test sandboxes
+tmp/
+sandbox/
