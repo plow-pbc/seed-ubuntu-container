@@ -39,18 +39,14 @@ cmd_up() {
   # Build if missing (idempotent).
   bash "$REPO_ROOT/ref/build-image.sh" >/dev/null
 
-  # Handle name collision. Scope the existence check to containers only —
-  # `docker inspect` matches any docker object (containers, images, volumes,
-  # networks), so an unrelated object named `seed-ubuntu-<name>` would block
-  # `up`. Use the explicit container-only subcommand on Linux.
-  local container_exists=0
-  case "$RUNTIME" in
-    docker)
-      if docker container inspect "$fn" >/dev/null 2>&1; then container_exists=1; fi ;;
-    container)
-      if container inspect "$fn" >/dev/null 2>&1; then container_exists=1; fi ;;
-  esac
-  if [ "$container_exists" = 1 ]; then
+  # Handle name collision via cmd_list — single source of truth for "which
+  # seed-ubuntu containers exist." Naturally filtered to containers (not
+  # images/volumes/networks). Capture to a variable first so a cmd_list
+  # failure (daemon error) trips set -e at the assignment instead of being
+  # silently swallowed by the if's conditional context.
+  local listing
+  listing="$(cmd_list)"
+  if printf '%s\n' "$listing" | grep -Fxq "$fn"; then
     if [ "$recreate" = 1 ]; then
       cmd_down "$name"
     else
@@ -78,14 +74,11 @@ cmd_exec() {
 cmd_down() {
   local name="$1"
   local fn; fn="$(full_name "$name")"
-  # Idempotent only for the absent case. `inspect` can't distinguish absent
-  # from daemon-error (both exit non-zero), so use a list-and-filter query
-  # that fails loudly on daemon errors but returns empty on absent.
+  # Idempotent only for the absent case. Capture cmd_list to a variable first
+  # — wrapping it in `if cmd_list | ...; then` would suppress set -e on
+  # daemon failures (verified by prompt 13).
   local listing
-  case "$RUNTIME" in
-    docker)    listing="$(docker ps -a --filter "name=^${fn}$" --format '{{.Names}}')" ;;
-    container) listing="$(container list --all --format '{{.Names}}')" ;;
-  esac
+  listing="$(cmd_list)"
   if printf '%s\n' "$listing" | grep -Fxq "$fn"; then
     "$RUNTIME" rm -f "$fn" >/dev/null
   fi
