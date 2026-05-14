@@ -12,13 +12,13 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=12
+TOTAL=13
 # Apple `container` doesn't have a docker-style cross-object name namespace
 # (image/volume/network/container all share names), so the volume-collision
 # probe at the end is docker-only — extra prompt on docker hosts. The
-# daemon-error propagation probe in [13] is also docker-only because it
+# daemon-error propagation probe in [14] is also docker-only because it
 # shadows the `docker` binary in PATH to simulate failure.
-[ "$RUNTIME" = "docker" ] && TOTAL=14
+[ "$RUNTIME" = "docker" ] && TOTAL=15
 
 SANDBOX=ref/sandbox.sh
 fail()    { echo "FAIL: $*" >&2; exit 1; }
@@ -200,13 +200,56 @@ trap - EXIT
   || fail "--mount without colon (HOST only) should have errored"
 echo "  ok"
 
-# 13. (Docker only) cmd_down propagates real runtime errors. `inspect` failing
+# 13. Preflight install grammar on Darwin/arm64. Pins the two macOS-specific
+#     commands the v0 install path depends on: `brew install container`
+#     (formula, not --cask) and `container system start --enable-kernel-install`
+#     (non-interactive kata kernel install). PATH-shadows `brew` and the
+#     `container` binary it materializes, so this runs unconditionally — a
+#     contributor on Linux can still catch a regression on the macOS path.
+#     Reuses test 9's UNAME_S env-var override seam and test 14's PATH-shadow
+#     seam.
+echo "[13/$TOTAL] preflight install grammar on Darwin/arm64..."
+PFB_DIR="$(mktemp -d)"
+PFB_LOG="$PFB_DIR/calls.log"
+trap 'rm -rf "$PFB_DIR"' EXIT
+# Outer heredoc unquoted: $PFB_LOG and $PFB_DIR resolve to real paths at
+# write time, but \$*/\$1/\$2 are escaped so fake-brew evaluates them at run
+# time. Inner heredoc single-quoted: $* and $FAKE_LOG stay literal, deferred
+# to fake-container's run-time env.
+cat > "$PFB_DIR/brew" <<FAKE
+#!/usr/bin/env bash
+echo "brew \$*" >> "$PFB_LOG"
+if [ "\$1" = "install" ] && [ "\$2" = "container" ]; then
+  cat > "$PFB_DIR/container" <<'INNER'
+#!/usr/bin/env bash
+echo "container \$*" >> "\$FAKE_LOG"
+INNER
+  chmod +x "$PFB_DIR/container"
+fi
+FAKE
+chmod +x "$PFB_DIR/brew"
+# Scrubbed PATH ($PFB_DIR plus /usr/bin:/bin for `bash` itself). Without this,
+# a real `container` binary on the host (e.g. /opt/homebrew/bin/container)
+# would shadow the to-be-installed fake, preflight would skip the install
+# branch, and the regression check would silently pass.
+echo y | FAKE_LOG="$PFB_LOG" UNAME_S=Darwin UNAME_M=arm64 \
+  PATH="$PFB_DIR:/usr/bin:/bin" bash ref/preflight.sh >/dev/null \
+  || fail "preflight should succeed on Darwin/arm64 with brew on PATH"
+grep -Fxq "brew install container" "$PFB_LOG" \
+  || fail "preflight must call 'brew install container' (formula, not --cask)"
+grep -Fxq "container system start --enable-kernel-install" "$PFB_LOG" \
+  || fail "preflight must pass --enable-kernel-install (non-interactive kata kernel)"
+rm -rf "$PFB_DIR"
+trap - EXIT
+echo "  ok"
+
+# 14. (Docker only) cmd_down propagates real runtime errors. `inspect` failing
 #     doesn't mean "absent" — that's the bug we fixed by switching to a
 #     list-and-filter query. Pin it by faking docker as a binary that always
 #     exits non-zero; sandbox.sh down must propagate. Apple `container` doesn't
 #     share the docker binary name, so the PATH shadow can't bite on macOS.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[13/$TOTAL] cmd_down propagates daemon errors..."
+  echo "[14/$TOTAL] cmd_down propagates daemon errors..."
   FAKE_BIN="$(mktemp -d)"
   trap 'rm -rf "$FAKE_BIN"' EXIT
   cat > "$FAKE_BIN/docker" <<'FAKE'
@@ -222,14 +265,14 @@ FAKE
   echo "  ok"
 fi
 
-# 14. (Docker only) cmd_up's collision check must NOT match non-container
+# 15. (Docker only) cmd_up's collision check must NOT match non-container
 #     docker objects. Round-10 narrowed from `docker inspect` (matches
 #     containers/images/volumes/networks) via `cmd_list` (containers only).
 #     If someone reverts to broad inspect, a same-named docker volume
 #     would falsely block `sandbox.sh up`. Apple `container` doesn't share
 #     this namespace so the probe is docker-only.
 if [ "$RUNTIME" = "docker" ]; then
-  echo "[14/$TOTAL] cmd_up ignores non-container docker objects..."
+  echo "[15/$TOTAL] cmd_up ignores non-container docker objects..."
   VOL_NAME="verify-vol-$$-$RANDOM"
   FULL_VOL="$(full_name "$VOL_NAME")"
   docker volume create "$FULL_VOL" >/dev/null
