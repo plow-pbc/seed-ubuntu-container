@@ -32,7 +32,7 @@ bash ref/preflight.sh
 This script:
 
 - Detects host. Linux/amd64, Linux/arm64, Darwin/arm64 continue. Darwin/amd64 (Intel Mac) aborts with a clear message. Any other host aborts.
-- Detects runtime: `docker` on Linux, `container` on macOS. If missing, lists install commands in the plan.
+- Detects runtime: `docker` on Linux, `container` on macOS. If missing, the plan names what will be installed and how (sudo on Linux, Homebrew on macOS).
 - Prints a single plan to stdout summarizing what will be installed and whether re-login is required.
 - Asks a single y/n confirm. On y, runs all install commands non-interactively.
 - If `usermod -aG docker $USER` was required, exits non-zero with `"Log out and back in, then re-run preflight"`. Does NOT fall back to `sudo docker`.
