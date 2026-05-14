@@ -6,8 +6,8 @@ set -euo pipefail
 # Exits non-zero with a clear message if anything is wrong or if re-login
 # is required after group changes.
 
-UNAME_S="$(uname -s)"
-UNAME_M="$(uname -m)"
+UNAME_S="${UNAME_S:-$(uname -s)}"
+UNAME_M="${UNAME_M:-$(uname -m)}"
 
 abort() {
   echo "preflight: $*" >&2

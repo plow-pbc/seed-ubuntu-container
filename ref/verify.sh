@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=5
+TOTAL=6
 
 # 1. Runtime is healthy.
 echo "[1/$TOTAL] Runtime is healthy ($RUNTIME)..."
@@ -108,6 +108,15 @@ fi
 bash ref/sandbox.sh down "$MNT_NAME" >/dev/null
 rm -rf "$MNT_HOST"
 trap - EXIT
+echo "  ok"
+
+# 6. preflight aborts on unsupported host (the SEED's explicit fail-fast
+#    guarantee: no Colima fallback, no silent substitution).
+echo "[6/$TOTAL] preflight aborts on Intel Mac..."
+if echo y | UNAME_S=Darwin UNAME_M=x86_64 bash ref/preflight.sh >/dev/null 2>&1; then
+  echo "FAIL: preflight should have aborted on Darwin/x86_64 (Intel Mac)" >&2
+  exit 1
+fi
 echo "  ok"
 
 echo "All checks passed."
