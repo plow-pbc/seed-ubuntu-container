@@ -12,10 +12,12 @@ cd "$REPO_ROOT"
 RUNTIME="$(detect_runtime)" || exit 1
 IMAGE_TAG="$(image_tag)"
 
-TOTAL=13
+TOTAL=12
 # Apple `container` doesn't have a docker-style cross-object name namespace
 # (image/volume/network/container all share names), so the volume-collision
-# probe at the end is docker-only — extra prompt on docker hosts.
+# probe at the end is docker-only — extra prompt on docker hosts. The
+# daemon-error propagation probe in [13] is also docker-only because it
+# shadows the `docker` binary in PATH to simulate failure.
 [ "$RUNTIME" = "docker" ] && TOTAL=14
 
 SANDBOX=ref/sandbox.sh
@@ -198,24 +200,27 @@ trap - EXIT
   || fail "--mount without colon (HOST only) should have errored"
 echo "  ok"
 
-# 13. cmd_down propagates real runtime errors. `inspect` failing doesn't mean
-#     "absent" — that's the bug we fixed by switching to a list-and-filter
-#     query. Pin it by faking docker as a binary that always exits non-zero;
-#     sandbox.sh down must propagate.
-echo "[13/$TOTAL] cmd_down propagates daemon errors..."
-FAKE_BIN="$(mktemp -d)"
-trap 'rm -rf "$FAKE_BIN"' EXIT
-cat > "$FAKE_BIN/docker" <<'FAKE'
+# 13. (Docker only) cmd_down propagates real runtime errors. `inspect` failing
+#     doesn't mean "absent" — that's the bug we fixed by switching to a
+#     list-and-filter query. Pin it by faking docker as a binary that always
+#     exits non-zero; sandbox.sh down must propagate. Apple `container` doesn't
+#     share the docker binary name, so the PATH shadow can't bite on macOS.
+if [ "$RUNTIME" = "docker" ]; then
+  echo "[13/$TOTAL] cmd_down propagates daemon errors..."
+  FAKE_BIN="$(mktemp -d)"
+  trap 'rm -rf "$FAKE_BIN"' EXIT
+  cat > "$FAKE_BIN/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "fake docker: simulated daemon error" >&2
 exit 1
 FAKE
-chmod +x "$FAKE_BIN/docker"
-! PATH="$FAKE_BIN:$PATH" sb_down "verify-fake-$$-$RANDOM" >/dev/null 2>&1 \
-  || fail "sandbox.sh down should have propagated fake-docker failure (regressed back to inspect-and-swallow?)"
-rm -rf "$FAKE_BIN"
-trap - EXIT
-echo "  ok"
+  chmod +x "$FAKE_BIN/docker"
+  ! PATH="$FAKE_BIN:$PATH" sb_down "verify-fake-$$-$RANDOM" >/dev/null 2>&1 \
+    || fail "sandbox.sh down should have propagated fake-docker failure (regressed back to inspect-and-swallow?)"
+  rm -rf "$FAKE_BIN"
+  trap - EXIT
+  echo "  ok"
+fi
 
 # 14. (Docker only) cmd_up's collision check must NOT match non-container
 #     docker objects. Round-10 narrowed from `docker inspect` (matches
