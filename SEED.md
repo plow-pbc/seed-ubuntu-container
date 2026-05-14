@@ -98,6 +98,8 @@ A deterministic implementation lives at [`ref/verify.sh`](ref/verify.sh).
 
 3. **End-to-end round-trip.** Spin up an ephemeral sandbox via `sandbox.sh up verify-<random>`, exec `echo hello` inside it, expect stdout `hello` and exit code 0, then `sandbox.sh down verify-<random>`. After teardown, the sandbox MUST NOT appear in `sandbox.sh list`. Cleanup runs via `trap` even on failure. Expected: round-trip succeeds, no residue.
 
+In addition to the three prompts above, `ref/verify.sh` pins individual Object/Action/Dependency contracts: `exec` exit-code proxying ([[#^act-exec]]), `--mount` stacking + read/write round-trip ([[#^act-up]]), name-collision rejection and `--recreate` replacement ([[#^act-up]]), idempotent `down` on an absent name ([[#^act-down]]), `preflight` fail-fast on Intel Mac and other unsupported hosts ([[#^dep-cpu]], [[#^o-intel-mac]]), and daemon-error propagation in `cmd_down` ([[#^act-down]]). Each is a regression check, not a new normative prompt.
+
 ## Feedback
 
 (default)
