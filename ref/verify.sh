@@ -312,4 +312,53 @@ if [ "$RUNTIME" = "docker" ]; then
   echo "  ok"
 fi
 
+# 17. exec forwards -i to the underlying runtime. Without -i, docker exec closes
+#     stdin and the inner `cat` would see EOF; with -i, stdin pipes through and
+#     the payload round-trips. Pins the new flag-passthrough contract added to
+#     cmd_exec for interactive consumers (e.g. `op account add` prompts in
+#     seed-1password). Unknown flags MUST be rejected before the `--` separator
+#     is consumed.
+EXI_NAME="verify-exec-i-$$-$RANDOM"
+trap 'cleanup_sandbox "$EXI_NAME"' EXIT
+echo "exec forwards -i to runtime (and rejects unknown flags)..."
+sb_up "$EXI_NAME" >/dev/null
+PAYLOAD="hello-via-stdin-$RANDOM"
+OUT="$(sb_exec "$EXI_NAME" -i -- cat <<<"$PAYLOAD")"
+[ "$OUT" = "$PAYLOAD" ] || fail "exec -i did not forward stdin; expected '$PAYLOAD', got '$OUT'"
+! sb_exec "$EXI_NAME" --bogus -- true >/dev/null 2>&1 \
+  || fail "exec must reject unknown flags before consuming '--'"
+sb_down "$EXI_NAME" >/dev/null
+trap - EXIT
+echo "  ok"
+
+# 18. (Docker only) exec forwards -t and -it spellings to the underlying runtime
+#     argv. Test 17 pins -i end-to-end via stdin round-trip; this prompt pins
+#     -t and -it via a PATH-shadowed fake docker that logs argv. Without a
+#     real TTY in CI, the argv check is the load-bearing test for the
+#     non-stdin half of the -i/-t/-it allowlist. Apple `container` doesn't
+#     share the docker binary name, so the PATH shadow can't bite on macOS.
+if [ "$RUNTIME" = "docker" ]; then
+  echo "exec forwards -t and -it to runtime argv..."
+  TFB_DIR="$(mktemp -d)"
+  TFB_LOG="$TFB_DIR/argv.log"
+  trap 'rm -rf "$TFB_DIR"' EXIT
+  # Heredoc unquoted so $TFB_LOG resolves at write time; \$* escaped so the
+  # fake evaluates argv at run time.
+  cat > "$TFB_DIR/docker" <<FAKE
+#!/usr/bin/env bash
+echo "\$*" >> "$TFB_LOG"
+exit 0
+FAKE
+  chmod +x "$TFB_DIR/docker"
+  PATH="$TFB_DIR:$PATH" bash ref/sandbox.sh exec probe -t -- true
+  PATH="$TFB_DIR:$PATH" bash ref/sandbox.sh exec probe -it -- true
+  grep -Fxq "exec -t seed-ubuntu-probe true" "$TFB_LOG" \
+    || fail "-t not forwarded; log: $(cat "$TFB_LOG")"
+  grep -Fxq "exec -it seed-ubuntu-probe true" "$TFB_LOG" \
+    || fail "-it not forwarded; log: $(cat "$TFB_LOG")"
+  rm -rf "$TFB_DIR"
+  trap - EXIT
+  echo "  ok"
+fi
+
 echo "All checks passed."
