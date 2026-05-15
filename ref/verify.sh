@@ -312,4 +312,23 @@ if [ "$RUNTIME" = "docker" ]; then
   echo "  ok"
 fi
 
+# 17. exec forwards -i to the underlying runtime. Without -i, docker exec closes
+#     stdin and the inner `cat` would see EOF; with -i, stdin pipes through and
+#     the payload round-trips. Pins the new flag-passthrough contract added to
+#     cmd_exec for interactive consumers (e.g. `op account add` prompts in
+#     seed-1password). Unknown flags MUST be rejected before the `--` separator
+#     is consumed.
+EXI_NAME="verify-exec-i-$$-$RANDOM"
+trap 'cleanup_sandbox "$EXI_NAME"' EXIT
+echo "exec forwards -i to runtime (and rejects unknown flags)..."
+sb_up "$EXI_NAME" >/dev/null
+PAYLOAD="hello-via-stdin-$RANDOM"
+OUT="$(sb_exec "$EXI_NAME" -i -- cat <<<"$PAYLOAD")"
+[ "$OUT" = "$PAYLOAD" ] || fail "exec -i did not forward stdin; expected '$PAYLOAD', got '$OUT'"
+! sb_exec "$EXI_NAME" --bogus -- true >/dev/null 2>&1 \
+  || fail "exec must reject unknown flags before consuming '--'"
+sb_down "$EXI_NAME" >/dev/null
+trap - EXIT
+echo "  ok"
+
 echo "All checks passed."

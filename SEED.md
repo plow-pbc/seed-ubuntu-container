@@ -76,8 +76,9 @@ Idempotent. Builds `seed-ubuntu:<sha256-of-Dockerfile>` if missing. No sudo, no 
 
 ### Sandbox is exec'd into
 
-- `sandbox.sh exec <name> -- <cmd> [args...]` runs the command inside the sandbox. ^act-exec
+- `sandbox.sh exec <name> [-i|-t|-it] -- <cmd> [args...]` runs the command inside the sandbox. ^act-exec
 - Streams stdout/stderr. MUST proxy the inner command's exit code.
+- Forwards `-i`/`-t`/`-it` (between `<name>` and `--`) to the underlying runtime's `exec`. Required for consumers that drive interactive stdin (e.g. `op account add`'s prompts in [seed-1password](https://github.com/plow-pbc/seed-1password)). Unknown flags MUST be rejected before `--` is consumed.
 
 ### Sandbox is torn down
 

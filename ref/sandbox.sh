@@ -66,14 +66,24 @@ cmd_up() {
 
 cmd_exec() {
   local name="$1"; shift
+  # Forward -i/-t/-it to the underlying runtime's `exec` so consumers can drive
+  # interactive prompts (e.g. `op account add`'s stdin reads in seed-1password).
+  # Explicit allowlist — matches `cmd_up`'s stance of named flags, not bare passthrough.
+  local exec_flags=()
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+    case "$1" in
+      -i|-t|-it) exec_flags+=("$1"); shift ;;
+      *) echo "sandbox.sh exec: unknown flag '$1' (allowed: -i, -t, -it)" >&2; exit 2 ;;
+    esac
+  done
   if [ "${1:-}" != "--" ]; then
-    echo "usage: sandbox.sh exec <name> -- <cmd> [args...]" >&2
+    echo "usage: sandbox.sh exec <name> [-i|-t|-it] -- <cmd> [args...]" >&2
     exit 2
   fi
   shift  # consume --
 
   local fn; fn="$(full_name "$name")"
-  exec "$RUNTIME" exec "$fn" "$@"
+  exec "$RUNTIME" exec ${exec_flags[@]+"${exec_flags[@]}"} "$fn" "$@"
 }
 
 cmd_down() {
