@@ -331,4 +331,34 @@ sb_down "$EXI_NAME" >/dev/null
 trap - EXIT
 echo "  ok"
 
+# 18. (Docker only) exec forwards -t and -it spellings to the underlying runtime
+#     argv. Test 17 pins -i end-to-end via stdin round-trip; this prompt pins
+#     -t and -it via a PATH-shadowed fake docker that logs argv. Without a
+#     real TTY in CI, the argv check is the load-bearing test for the
+#     non-stdin half of the -i/-t/-it allowlist. Apple `container` doesn't
+#     share the docker binary name, so the PATH shadow can't bite on macOS.
+if [ "$RUNTIME" = "docker" ]; then
+  echo "exec forwards -t and -it to runtime argv..."
+  TFB_DIR="$(mktemp -d)"
+  TFB_LOG="$TFB_DIR/argv.log"
+  trap 'rm -rf "$TFB_DIR"' EXIT
+  # Heredoc unquoted so $TFB_LOG resolves at write time; \$* escaped so the
+  # fake evaluates argv at run time.
+  cat > "$TFB_DIR/docker" <<FAKE
+#!/usr/bin/env bash
+echo "\$*" >> "$TFB_LOG"
+exit 0
+FAKE
+  chmod +x "$TFB_DIR/docker"
+  PATH="$TFB_DIR:$PATH" bash ref/sandbox.sh exec probe -t -- true
+  PATH="$TFB_DIR:$PATH" bash ref/sandbox.sh exec probe -it -- true
+  grep -Fxq "exec -t seed-ubuntu-probe true" "$TFB_LOG" \
+    || fail "-t not forwarded; log: $(cat "$TFB_LOG")"
+  grep -Fxq "exec -it seed-ubuntu-probe true" "$TFB_LOG" \
+    || fail "-it not forwarded; log: $(cat "$TFB_LOG")"
+  rm -rf "$TFB_DIR"
+  trap - EXIT
+  echo "  ok"
+fi
+
 echo "All checks passed."

@@ -2,11 +2,6 @@
 set -euo pipefail
 
 # sandbox.sh — uniform ephemeral-sandbox interface (docker | apple container).
-# Usage:
-#   sandbox.sh up   <name> [--recreate] [--mount HOST:CONTAINER]
-#   sandbox.sh exec <name> -- <cmd> [args...]
-#   sandbox.sh down <name>
-#   sandbox.sh list
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib.sh
